@@ -1,30 +1,24 @@
-# MovesOS Router
+# MovesCode Router
 
-Official, standalone routing component for MovesOS. Version 1.0.0 provides a stable routing foundation for PHP 8.2 and newer.
+Componente oficial de roteamento HTTP do MovesOS para PHP 8.2+. Registra rotas, resolve parâmetros, executa controllers ou callables, aplica middleware, gera URLs nomeadas e trata erros de despacho.
 
-## Installation
+## Instalação
 
 ```bash
 composer require movescode/router:^1.0
 ```
 
-Point all non-file requests to your front controller and create the router with the public base URL:
-
 ```php
 use MovesCode\Router\Router;
 
-$router = new Router('https://example.com');
-$router->get('/', fn () => print 'Hello');
+$router = new Router('https://www.exemplo.com.br');
+$router->get('/', fn () => print 'Página inicial');
 $router->dispatch();
-
-if ($router->error()) {
-    $router->redirect('/ops/' . $router->error());
-}
 ```
 
-Both `REQUEST_URI` front controllers and the traditional `?route=/path` rewrite are supported.
+Direcione requisições que não correspondam a arquivos reais para o front controller. O Router aceita o path de `REQUEST_URI` e também `$_GET['route']`.
 
-## HTTP methods
+## Métodos HTTP
 
 ```php
 $router->get('/posts', 'Posts:index');
@@ -34,93 +28,80 @@ $router->patch('/posts/{id}', 'Posts:patch');
 $router->delete('/posts/{id}', 'Posts:delete');
 ```
 
-For HTML forms using POST, add `_method` with `PUT`, `PATCH`, or `DELETE`. Spoofing is intentionally ignored for non-POST requests.
+Formulários POST podem simular `PUT`, `PATCH` ou `DELETE` por meio do campo `_method`.
 
-## Groups and namespaces
+## Grupos e namespaces
 
 ```php
-$router
-    ->group('studio')
-    ->namespace('Source\\Controllers\\Studio');
-
+$router->group('studio')->namespace('App\\Controllers\\Studio');
 $router->get('/', 'Dashboard:home');
 $router->group('studio/posts');
 $router->get('/{id}', 'Posts:show');
 ```
 
-Calling `group('')` returns subsequent registrations to the root. A later group is an absolute group selection, not a child implicitly appended to the previous group.
+`group('')` retorna os próximos registros à raiz. Cada grupo informado é absoluto.
 
-## Controllers and callables
+## Controllers e callables
 
-Controller classes are resolved only from handlers registered by application code. They receive the router in their constructor, and route parameters are passed to the action:
+O formato do controller é `Classe:método`. A classe recebe o Router no construtor e o método recebe os parâmetros:
 
 ```php
 final class Posts
 {
     public function __construct(private Router $router) {}
-
-    public function show(array $data): void
-    {
-        echo $data['id'];
-    }
+    public function show(array $data): void { echo $data['id']; }
 }
 ```
 
-Callables receive route data and may optionally receive the router:
+Callables podem receber os dados e, opcionalmente, o Router:
 
 ```php
 $router->get('/hello/{name}', function (array $data, Router $router): void {
-    echo "Hello {$data['name']}";
+    echo "Olá, {$data['name']}";
 });
 ```
 
-## Named routes
+## Rotas nomeadas
 
 ```php
 $router->get('/posts/{id}/edit', 'Posts:edit', 'post.edit');
-
-$url = $router->route('post.edit', [
-    'id' => 10,
-    'tab' => 'media',
-]);
-// https://example.com/posts/10/edit?tab=media
+$url = $router->route('post.edit', ['id' => 10, 'tab' => 'media']);
+// https://www.exemplo.com.br/posts/10/edit?tab=media
 ```
 
-Values used by placeholders are URL encoded. Remaining values become a query string.
+Parâmetros do path são codificados; valores excedentes formam a query string.
 
 ## Middleware
 
-Middleware classes expose `handle(Router $router): bool`. Returning anything other than `true` stops dispatch.
+Middleware deve possuir `handle(Router $router): bool`. Retorno diferente de `true` interrompe o handler.
 
 ```php
 $router->group('studio', AuthMiddleware::class);
-$router->get('/', 'Dashboard:home');
 $router->get('/admin', 'Dashboard:admin', middleware: [
     AuthMiddleware::class,
     AdminMiddleware::class,
 ]);
 ```
 
-Group middleware and route middleware are combined; duplicate class names run once.
+## Estado, redirecionamento e erros
 
-## Redirects and errors
+- `data()`: parâmetros encontrados.
+- `current()`: contexto da rota atual.
+- `home()`: URL base.
+- `route()`: URL nomeada.
+- `redirect()`: header `Location`.
+- `error()`: último erro.
 
-`redirect()` accepts an absolute URL, a path, or a named route. `error()` returns `404` when no path matches, `405` when the path exists for another method, `400` for an unsafe controller declaration, and `501` for an unavailable handler or middleware.
+Erros possíveis: 400 para handler inseguro, 404 para rota inexistente, 405 para método incompatível, 501 para handler indisponível e 500 para falha da aplicação.
 
 ```php
-if ($router->error()) {
+if (!$router->dispatch() && $router->error()) {
     $router->redirect('/ops/' . $router->error());
 }
 ```
 
-Unhandled exceptions from application handlers result in error `500` without leaking exception details.
+## Segurança
 
-## MovesOS integration
+Somente handlers registrados podem ser executados. Tokens de classe e método são validados, spoofing é limitado a POST e parâmetros são decodificados uma vez. Registre rotas estáticas antes de rotas dinâmicas amplas.
 
-Use `MovesCode\Router\Router` in the application front controller, register each product's routes, and call `dispatch()` once after route registration. The package is independent from application configuration, databases, templates, and local filesystem paths.
-
-Functional controller and method-spoofing examples are available in `exemple/`.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+Exemplos estão em `exemple/`. Licença MIT.
