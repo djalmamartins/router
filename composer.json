@@ -1,0 +1,17 @@
+{
+  "name": "movesos/router",
+  "description": "Official routing component for MovesOS",
+  "type": "library",
+  "license": "MIT",
+  "keywords": ["router", "routing", "movesos", "mvc", "rest"],
+  "require": {
+    "php": "^8.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "MovesOS\\Router\\": "src/"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

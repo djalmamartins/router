@@ -1,0 +1,12 @@
+/.env
+/.codelab.json
+/.idea/
+/.phpunit.cache/
+/composer.lock
+/coverage/
+/logs/
+/public/
+/tmp/
+/vendor/
+.DS_Store
+*.log
