@@ -2,7 +2,7 @@
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 
-use MovesOS\Router\Router;
+use MovesCode\Router\Router;
 
 $router = new Router('http://localhost');
 

@@ -2,7 +2,7 @@
 
 namespace Example\Controllers;
 
-use MovesOS\Router\Router;
+use MovesCode\Router\Router;
 
 final class Home
 {

@@ -5,13 +5,13 @@ Official, standalone routing component for MovesOS. Version 1.0.0 provides a sta
 ## Installation
 
 ```bash
-composer require movesos/router:^2.0
+composer require movescode/router:^1.0
 ```
 
 Point all non-file requests to your front controller and create the router with the public base URL:
 
 ```php
-use MovesOS\Router\Router;
+use MovesCode\Router\Router;
 
 $router = new Router('https://example.com');
 $router->get('/', fn () => print 'Hello');
@@ -117,7 +117,7 @@ Unhandled exceptions from application handlers result in error `500` without lea
 
 ## MovesOS integration
 
-Use `MovesOS\Router\Router` in the application front controller, register each product's routes, and call `dispatch()` once after route registration. The package is independent from application configuration, databases, templates, and local filesystem paths.
+Use `MovesCode\Router\Router` in the application front controller, register each product's routes, and call `dispatch()` once after route registration. The package is independent from application configuration, databases, templates, and local filesystem paths.
 
 Functional controller and method-spoofing examples are available in `exemple/`.
 

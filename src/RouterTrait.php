@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace MovesOS\Router;
+namespace MovesCode\Router;
 
 trait RouterTrait
 {
