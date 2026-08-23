@@ -5,7 +5,7 @@ Componente oficial de roteamento HTTP do MovesOS para PHP 8.2+. Registra rotas, 
 ## Instalação
 
 ```bash
-composer require movescode/router:^1.0
+composer require movescode/router:^1.1
 ```
 
 ```php
@@ -17,6 +17,57 @@ $router->dispatch();
 ```
 
 Direcione requisições que não correspondam a arquivos reais para o front controller. O Router aceita o path de `REQUEST_URI` e também `$_GET['route']`.
+
+## Domínios e subdomínios
+
+Use o domínio principal para a camada pública e subdomínios para separar cada aplicação:
+
+```php
+$router = new Router('https://moves.com.br');
+
+$router->subdomain(''); // moves.com.br: site público
+$router->get('/', 'Web\\Home:index', 'web.home');
+
+$router->subdomain('studio'); // studio.moves.com.br: gestão e criação
+$router->get('/', 'Studio\\Dashboard:index', 'studio.home');
+
+$router->subdomain('app'); // app.moves.com.br: aplicação do usuário
+$router->get('/', 'App\\Dashboard:index', 'app.home');
+
+$router->subdomain('api'); // api.moves.com.br: API para web e React Native
+$router->get('/users/{id}', 'Api\\Users:show', 'api.users.show');
+```
+
+`subdomain('')` representa exatamente o host informado no construtor. `subdomain(null)` remove a restrição e faz as próximas rotas aceitarem qualquer host. Para informar o host completo, use `domain('admin.moves.com.br')`.
+
+Rotas de múltiplos clientes também podem capturar parâmetros do domínio:
+
+```php
+$router->domain('{tenant}.moves.com.br');
+$router->get('/dashboard', function (array $data): void {
+    echo $data['tenant'];
+}, 'tenant.dashboard');
+
+echo $router->route('tenant.dashboard', ['tenant' => 'cliente']);
+// https://cliente.moves.com.br/dashboard
+```
+
+Os parâmetros do domínio e do caminho são entregues juntos ao handler. Nomes repetidos entre domínio e caminho são rejeitados.
+
+### Arquitetura recomendada
+
+- `moves.com.br`: website, páginas públicas, conteúdo e autenticação inicial.
+- `studio.moves.com.br`: painel administrativo, gestão e ferramentas internas.
+- `app.moves.com.br`: aplicação web autenticada utilizada pelo cliente.
+- `api.moves.com.br`: endpoints JSON consumidos pelo app web, integrações e aplicativo React Native.
+
+O aplicativo React Native não executa este Router. Ele envia requisições HTTPS para `api.moves.com.br`; o Router recebe essas requisições no servidor e encaminha cada endpoint ao controller da API.
+
+### DNS, servidor e HTTPS
+
+O Router não cria entradas DNS. Configure registros `A`, `AAAA` ou `CNAME` para cada subdomínio — ou um wildcard `*.moves.com.br` quando apropriado — apontando para o servidor. Apache ou Nginx também precisa aceitar esses hosts e direcioná-los ao mesmo front controller. Em produção, use certificado TLS que cubra o domínio principal e os subdomínios necessários.
+
+O host recebido é comparado sem a porta e nunca é usado para gerar URLs nomeadas. Essas URLs são construídas apenas com os domínios previamente registrados na aplicação.
 
 ## Métodos HTTP
 

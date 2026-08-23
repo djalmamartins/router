@@ -3,7 +3,7 @@
   "description": "Official routing component for MovesOS",
   "type": "library",
   "license": "MIT",
-  "keywords": ["router", "routing", "movesos", "mvc", "rest"],
+  "keywords": ["router", "routing", "domain", "subdomain", "movesos", "mvc", "rest", "api"],
   "homepage": "http://www.moves.com.br",
   "authors": [
     {

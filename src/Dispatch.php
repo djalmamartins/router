@@ -28,6 +28,9 @@ final readonly class Route
         public string $group,
         public string $pattern,
         public array $parameters,
+        public ?string $host,
+        public ?string $hostPattern,
+        public array $hostParameters,
     ) {
     }
 }
@@ -37,6 +40,10 @@ abstract class Dispatch
     private string $projectUrl;
     private string $basePath;
     private string $separator;
+    private string $scheme;
+    private string $baseHost;
+    private ?int $port;
+    private ?string $host = null;
     private string $group = '';
     private ?string $namespace = null;
     /** @var list<class-string> */
@@ -62,8 +69,32 @@ abstract class Dispatch
         }
 
         $this->basePath = $this->normalizePath((string) ($parts['path'] ?? ''));
+        $this->scheme = $scheme;
+        $this->baseHost = strtolower((string) $parts['host']);
+        $this->port = isset($parts['port']) ? (int) $parts['port'] : null;
         $this->projectUrl = rtrim($projectUrl, '/');
         $this->separator = $separator ?: ':';
+    }
+
+    public function domain(?string $domain): self
+    {
+        if ($domain === null) {
+            $this->host = null;
+            return $this;
+        }
+        $domain = strtolower(trim($domain, " .\t\n\r\0\x0B"));
+        if ($domain === '' || preg_match('/^(?=.{1,253}$)(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/', $domain) !== 1) {
+            throw new InvalidArgumentException('The domain must be a valid hostname without scheme, port or path.');
+        }
+        $this->host = $domain;
+        return $this;
+    }
+
+    public function subdomain(?string $subdomain): self
+    {
+        if ($subdomain === null) return $this->domain(null);
+        $subdomain = trim($subdomain, '.');
+        return $this->domain($subdomain === '' ? $this->baseHost : $subdomain . '.' . $this->baseHost);
     }
 
     public function namespace(?string $namespace): self
@@ -95,8 +126,16 @@ abstract class Dispatch
             $path = str_replace('{' . $parameter . '}', rawurlencode((string) $data[$parameter]), $path);
             unset($data[$parameter]);
         }
-
-        $url = $this->projectUrl . ($path === '/' ? '' : $path);
+        $host = $route->host ?? $this->baseHost;
+        foreach ($route->hostParameters as $parameter) {
+            if (!array_key_exists($parameter, $data)) continue;
+            $value = strtolower((string) $data[$parameter]);
+            if (preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/', $value) !== 1) return null;
+            $host = str_replace('{' . $parameter . '}', $value, $host);
+            unset($data[$parameter]);
+        }
+        $origin = $this->scheme . '://' . $host . ($this->port === null ? '' : ':' . $this->port);
+        $url = $origin . ($this->basePath === '/' ? '' : $this->basePath) . ($path === '/' ? '' : $path);
         return $data === [] ? $url : $url . '?' . http_build_query($data);
     }
 
@@ -143,10 +182,15 @@ abstract class Dispatch
 
         $method = $this->requestMethod();
         $path = $this->requestPath();
+        $host = $this->requestHost();
         $allowedForPath = false;
 
         foreach ($this->routes as $registeredMethod => $routes) {
             foreach ($routes as $route) {
+                $hostMatches = [];
+                if ($route->hostPattern !== null && preg_match($route->hostPattern, $host, $hostMatches) !== 1) {
+                    continue;
+                }
                 $matches = [];
                 if (preg_match($route->pattern, $path, $matches) !== 1) {
                     continue;
@@ -157,6 +201,9 @@ abstract class Dispatch
                 }
 
                 $data = [];
+                foreach ($route->hostParameters as $parameter) {
+                    $data[$parameter] = rawurldecode((string) ($hostMatches[$parameter] ?? ''));
+                }
                 foreach ($route->parameters as $parameter) {
                     $data[$parameter] = rawurldecode((string) ($matches[$parameter] ?? ''));
                 }
@@ -169,6 +216,8 @@ abstract class Dispatch
                     'middleware' => $route->middleware,
                     'group' => $route->group,
                     'namespace' => $route->namespace,
+                    'host' => $host,
+                    'domain' => $route->host,
                 ];
 
                 try {
@@ -195,6 +244,18 @@ abstract class Dispatch
         if (count($parameters) !== count(array_unique($parameters))) {
             throw new InvalidArgumentException('Route parameter names must be unique.');
         }
+        $hostParameters = [];
+        $hostPattern = null;
+        if ($this->host !== null) {
+            preg_match_all('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', $this->host, $hostFound);
+            $hostParameters = $hostFound[1] ?? [];
+            if (count($hostParameters) !== count(array_unique($hostParameters)) || array_intersect($parameters, $hostParameters) !== []) {
+                throw new InvalidArgumentException('Route and domain parameter names must be unique.');
+            }
+            $quotedHost = preg_quote($this->host, '~');
+            foreach ($hostParameters as $parameter) $quotedHost = str_replace('\\{' . $parameter . '\\}', '(?P<' . $parameter . '>[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)', $quotedHost);
+            $hostPattern = '~^' . $quotedHost . '$~iD';
+        }
 
         $quoted = preg_quote($routePath, '~');
         foreach ($parameters as $parameter) {
@@ -210,6 +271,9 @@ abstract class Dispatch
             $this->group,
             '~^' . ($routePath === '/' ? '/' : rtrim($quoted, '/')) . '/?$~uD',
             $parameters,
+            $this->host,
+            $hostPattern,
+            $hostParameters,
         );
         $this->routes[$method][] = $definition;
         if ($name !== null && $name !== '') {
@@ -308,6 +372,13 @@ abstract class Dispatch
             $path = substr($path, strlen($this->basePath)) ?: '/';
         }
         return $this->normalizePath($path);
+    }
+
+    private function requestHost(): string
+    {
+        $host = strtolower(trim((string) ($_SERVER['HTTP_HOST'] ?? $this->baseHost)));
+        if (str_starts_with($host, '[')) return trim(explode(']', $host, 2)[0], '[]');
+        return explode(':', $host, 2)[0];
     }
 
     private function normalizePath(string $path): string
