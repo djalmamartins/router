@@ -124,7 +124,24 @@ Parâmetros do path são codificados; valores excedentes formam a query string.
 
 ## Middleware
 
-Middleware deve possuir `handle(Router $router): bool`. Retorno diferente de `true` interrompe o handler.
+O Router usa `movescode/middleware:^0.1` para executar o handler dentro de um Pipeline. Para novos middlewares, implemente `MovesCode\Middleware\MiddlewareInterface`:
+
+```php
+use MovesCode\Middleware\MiddlewareInterface;
+
+final class ExampleMiddleware implements MiddlewareInterface
+{
+    public function handle(callable $next): mixed
+    {
+        // Código antes do handler.
+        $result = $next();
+        // Código depois do handler; o resultado pode ser transformado.
+        return $result;
+    }
+}
+```
+
+Registre classes explicitamente, na mesma sintaxe de rotas e grupos já existente. As classes precisam poder ser instanciadas sem argumentos. Não são aceitos objetos ou callables como registro de middleware do Router.
 
 ```php
 $router->group('studio', AuthMiddleware::class);
@@ -133,6 +150,22 @@ $router->get('/admin', 'Dashboard:admin', middleware: [
     AdminMiddleware::class,
 ]);
 ```
+
+A ordem é grupo antes de rota, preservando a primeira ocorrência de cada classe. Se A pertence ao grupo e B à rota, a execução é `A BEFORE → B BEFORE → Handler → B AFTER → A AFTER`. Classes repetidas no grupo e na rota continuam sendo executadas uma única vez.
+
+Um middleware pode retornar sem chamar `$next()` para interromper a cadeia. Nenhum middleware posterior é instanciado, e o handler não é executado. Cada continuação só pode ser usada uma vez durante `handle()`; a proteção pertence ao pacote `movescode/middleware`, sem duplicação no Router.
+
+### Compatibilidade com middleware legado
+
+O formato `handle(Router $router): bool` continua aceito. Somente `true` avança; qualquer outro retorno interrompe. Uma classe que implementa `MiddlewareInterface` usa o contrato novo; as demais seguem a chamada legada. Ambos podem ser combinados na mesma lista. A migração é opcional nesta versão: implemente a interface, troque o argumento Router por `callable $next` e substitua o retorno de autorização `true` por `return $next()`.
+
+O Router resolve e instancia cada classe somente quando sua etapa é alcançada. Isso preserva os efeitos de construtores e a interrupção legada. A classe interna `Internal\RegisteredMiddleware` adapta essa resolução ao contrato; não é API pública suportada. Controllers continuam recebendo Router no construtor, e callables continuam recebendo parâmetros e Router conforme a assinatura existente.
+
+### Retornos e falhas
+
+`dispatch(): bool` permanece inalterado. Retorna `true` quando o handler termina normalmente e a cadeia termina sem exceção não tratada. Retorna `false` se o handler não completar (inclusive short-circuit), ou diante dos erros documentados. O valor retornado pelo handler, inclusive `false`, `null` ou objetos, chega ao middleware por `$next()` e pode ser transformado, mas não é retornado por `dispatch()`. O Router não emite respostas retornadas automaticamente; a aplicação continua responsável pela saída.
+
+Exceções percorrem os middlewares externos, que podem tratá-las. Se escaparem do Pipeline, o Router mantém o comportamento existente: `dispatch()` retorna `false` e `error()` retorna `500`, sem expor a mensagem. Se um middleware tratar uma exceção do handler, `dispatch()` permanece `false` porque o handler não completou; nenhum erro 500 é atribuído automaticamente nesse caso. Middleware indisponível mantém o erro 501; erros de construção ou invocação mantêm 500.
 
 ## Estado, redirecionamento e erros
 
@@ -156,3 +189,20 @@ if (!$router->dispatch() && $router->error()) {
 Somente handlers registrados podem ser executados. Tokens de classe e método são validados, spoofing é limitado a POST e parâmetros são decodificados uma vez. Registre rotas estáticas antes de rotas dinâmicas amplas.
 
 Exemplos estão em `exemple/`. Licença MIT.
+
+## Desenvolvimento e revisão desta integração
+
+```sh
+composer validate --strict
+composer install
+composer audit
+vendor/bin/phpunit
+```
+
+Execute `php -l` nos arquivos PHP de `src/`, `tests/` e `exemple/`. PHPUnit 11.5 é dependência de desenvolvimento compatível com PHP 8.2. Não havia testes versionados nem PHPStan configurado no repositório original; os testes de regressão foram executados antes da alteração de dispatch e preservados na integração. O `composer.lock` permanece ignorado conforme a política existente da biblioteca; a resolução local usa PHP 8.2.0 como plataforma mínima.
+
+As assinaturas públicas, erros, registro por classe, deduplicação, controllers e rotas foram preservados. A recomendação é uma versão minor **1.2.0**, pois a tag 1.1.0 já existe. Nenhuma tag ou publicação faz parte desta alteração.
+
+Somente o código de registro da aplicação escolhe classes. Nunca derive handlers ou classes de middleware de parâmetros HTTP. Não há resolução automática por input, logging, retries ou novas operações de reflection; a reflexão preexistente de controllers/callables foi mantida. A resolução é local a cada dispatch, sem novos estados globais. Dados de requisição continuam no Router (`data()`/`current()`), como antes; não compartilhe a instância entre execuções concorrentes ou reentrantes. O próximo dispatch reinicializa esse estado.
+
+A cadeia passa a usar pilha proporcional à quantidade de middlewares. Cadeias extremamente profundas podem encontrar limites de memória/pilha do PHP, ao contrário da antiga passagem iterativa. Middlewares são código confiável e seguem responsáveis por seus próprios efeitos e retenção de dados. Mudanças de destrutores observáveis, dependência de stack traces internos e acesso a métodos privados não fazem parte da API suportada. Linux e Windows não foram executados nesta revisão.
