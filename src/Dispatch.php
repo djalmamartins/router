@@ -6,6 +6,9 @@ namespace MovesCode\Router;
 
 use Closure;
 use InvalidArgumentException;
+use MovesCode\Middleware\MiddlewareInterface;
+use MovesCode\Middleware\Pipeline;
+use MovesCode\Router\Internal\RegisteredMiddleware;
 use ReflectionFunction;
 use ReflectionMethod;
 use Throwable;
@@ -221,10 +224,7 @@ abstract class Dispatch
                 ];
 
                 try {
-                    if (!$this->runMiddleware($route->middleware)) {
-                        return false;
-                    }
-                    return $this->runHandler($route->handler, $route->namespace, $data);
+                    return $this->runPipeline($route, $data);
                 } catch (Throwable) {
                     $this->error = 500;
                     return false;
@@ -282,11 +282,12 @@ abstract class Dispatch
         return $this;
     }
 
-    private function runHandler(callable|string $handler, ?string $namespace, array $data): bool
+    private function runHandler(callable|string $handler, ?string $namespace, array $data, bool &$handled): mixed
     {
         if (is_callable($handler)) {
-            $this->invoke($handler, $data);
-            return true;
+            $result = $this->invoke($handler, $data);
+            $handled = true;
+            return $result;
         }
         if (!str_contains($handler, $this->separator)) {
             $this->error = 501;
@@ -303,11 +304,12 @@ abstract class Dispatch
             return false;
         }
         $instance = new $class($this);
-        $this->invoke([$instance, $action], $data);
-        return true;
+        $result = $this->invoke([$instance, $action], $data);
+        $handled = true;
+        return $result;
     }
 
-    private function invoke(callable $callable, array $data): void
+    private function invoke(callable $callable, array $data): mixed
     {
         $reflection = is_array($callable)
             ? new ReflectionMethod($callable[0], (string) $callable[1])
@@ -317,23 +319,36 @@ abstract class Dispatch
         if ($count > 1) {
             $arguments[] = $this;
         }
-        $callable(...$arguments);
+        return $callable(...$arguments);
     }
 
-    /** @param list<class-string> $middleware */
-    private function runMiddleware(array $middleware): bool
+    private function runPipeline(Route $route, array $data): bool
     {
-        foreach ($middleware as $class) {
-            if (!class_exists($class) || !method_exists($class, 'handle')) {
-                $this->error = 501;
-                return false;
-            }
-            $instance = new $class();
-            if ($instance->handle($this) !== true) {
-                return false;
-            }
+        $pipeline = new Pipeline();
+        foreach ($route->middleware as $class) {
+            // Resolve only when reached, preserving legacy short-circuit behavior.
+            $pipeline->pipe(new RegisteredMiddleware(function (callable $next) use ($class): mixed {
+                if (!class_exists($class) || !method_exists($class, 'handle')) {
+                    $this->error = 501;
+                    return false;
+                }
+                $instance = new $class();
+                if ($instance instanceof MiddlewareInterface) {
+                    return $instance->handle($next);
+                }
+                if ($instance->handle($this) !== true) {
+                    return false;
+                }
+                return $next();
+            }));
         }
-        return true;
+
+        $handled = false;
+        $pipeline->then(function () use ($route, $data, &$handled): mixed {
+            return $this->runHandler($route->handler, $route->namespace, $data, $handled);
+        });
+
+        return $handled;
     }
 
     /** @return list<class-string> */
