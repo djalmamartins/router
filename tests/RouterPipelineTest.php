@@ -109,7 +109,9 @@ final class RouterPipelineTest extends TestCase
         self::assertSame(['A BEFORE', 'B BEFORE', 'handler', 'B AFTER', 'A AFTER'], Trace::$events);
         self::assertSame('42', Trace::$observed);
         self::assertSame('https://example.test/admin/8', $router->route('admin.item', ['id' => 8]));
-        self::assertSame('admin.item', $router->current()->name);
+        $current = $router->current();
+        self::assertNotNull($current);
+        self::assertSame('admin.item', $current->name);
     }
 
     public function testGroupMiddlewareWithoutRouteMiddleware(): void

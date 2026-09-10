@@ -33,7 +33,8 @@
   "minimum-stability": "stable",
   "prefer-stable": true,
   "require-dev": {
-    "phpunit/phpunit": "^11.5"
+    "phpunit/phpunit": "^11.5",
+    "phpstan/phpstan": "^2.1"
   },
   "autoload-dev": {
     "psr-4": {

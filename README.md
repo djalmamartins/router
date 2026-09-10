@@ -197,9 +197,10 @@ composer validate --strict
 composer install
 composer audit
 vendor/bin/phpunit
+vendor/bin/phpstan analyse
 ```
 
-Execute `php -l` nos arquivos PHP de `src/`, `tests/` e `exemple/`. PHPUnit 11.5 é dependência de desenvolvimento compatível com PHP 8.2. Não havia testes versionados nem PHPStan configurado no repositório original; os testes de regressão foram executados antes da alteração de dispatch e preservados na integração. O `composer.lock` permanece ignorado conforme a política existente da biblioteca; a resolução local usa PHP 8.2.0 como plataforma mínima.
+Execute `php -l` nos arquivos PHP de `src/`, `tests/` e `exemple/`. PHPUnit 11.5 é dependência de desenvolvimento compatível com PHP 8.2. PHPStan 2 analisa `src/` e `tests/` no nível máximo, com PHP 8.2 como alvo. Não havia testes versionados nem PHPStan configurado no repositório original; os testes de regressão foram executados antes da alteração de dispatch e preservados na integração. O `composer.lock` permanece ignorado conforme a política existente da biblioteca; a resolução local usa PHP 8.2.0 como plataforma mínima.
 
 As assinaturas públicas, erros, registro por classe, deduplicação, controllers e rotas foram preservados. A recomendação é uma versão minor **1.2.0**, pois a tag 1.1.0 já existe. Nenhuma tag ou publicação faz parte desta alteração.
 

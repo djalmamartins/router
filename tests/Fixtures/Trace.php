@@ -14,6 +14,7 @@ namespace MovesCode\Router\Tests\Fixtures;
  */
 final class Trace
 {
+    /** @var list<string> */
     public static array $events = [];
     public static mixed $result = null;
     public static mixed $observed = null;

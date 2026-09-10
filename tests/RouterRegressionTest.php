@@ -114,7 +114,9 @@ final class RouterRegressionTest extends TestCase
         self::assertTrue($router->dispatch());
         self::assertSame([['id' => 'a b'], true], Trace::$observed);
         self::assertSame(['id' => 'a b'], $router->data());
-        self::assertSame('item', $router->current()->name);
+        $current = $router->current();
+        self::assertNotNull($current);
+        self::assertSame('item', $current->name);
         self::assertSame('https://example.test/item/a%20b?tab=info', $router->route('item', ['id' => 'a b', 'tab' => 'info']));
     }
 
@@ -164,7 +166,9 @@ final class RouterRegressionTest extends TestCase
         $router->subdomain(null)->group(null)->get('/public', static fn () => null, 'public');
         $_GET['route'] = '/public';
         self::assertTrue($router->dispatch());
-        self::assertSame('public', $router->current()->name);
+        $current = $router->current();
+        self::assertNotNull($current);
+        self::assertSame('public', $current->name);
         self::assertSame('https://example.test', $router->home());
         self::assertNull($router->route('missing'));
     }
@@ -191,4 +195,27 @@ final class RouterRegressionTest extends TestCase
             self::assertSame($status, $router->error());
         }
     }
+    public function testMalformedRequestValuesDoNotTriggerStringConversionWarnings(): void
+    {
+        $_SERVER['REQUEST_METHOD'] = ['GET'];
+        $_SERVER['HTTP_HOST'] = ['example.test'];
+        $_GET['route'] = ['/'];
+        $router = new Router('https://example.test');
+        $router->get('/', static fn () => null);
+        self::assertTrue($router->dispatch());
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_POST['_method'] = ['DELETE'];
+        $router->post('/', static fn () => null);
+        self::assertTrue($router->dispatch());
+    }
+
+    public function testNamedRouteRejectsNonStringableParameters(): void
+    {
+        $router = new Router('https://example.test');
+        $router->domain('{tenant}.example.test')->get('/{id}', static fn () => null, 'item');
+        self::assertNull($router->route('item', ['id' => [], 'tenant' => 'ok']));
+        self::assertNull($router->route('item', ['id' => 1, 'tenant' => new \stdClass()]));
+        self::assertSame('https://ok.example.test/1?filter%5Bactive%5D=1', $router->route('item', ['id' => 1, 'tenant' => 'ok', 'filter' => ['active' => 1]]));
+    }
+
 }
