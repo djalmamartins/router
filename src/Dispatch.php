@@ -18,7 +18,7 @@ final readonly class Route
 {
     /**
      * @param callable|string $handler
-     * @param list<string> $middleware
+     * @param list<string|MiddlewareInterface> $middleware
      * @param list<string> $hostParameters
      * @param list<string> $parameters
      */
@@ -51,7 +51,7 @@ abstract class Dispatch
     private ?string $host = null;
     private string $group = '';
     private ?string $namespace = null;
-    /** @var list<string> */
+    /** @var list<string|MiddlewareInterface> */
     private array $groupMiddleware = [];
     /** @var array<string, list<Route>> */
     private array $routes = [];
@@ -114,10 +114,10 @@ abstract class Dispatch
     }
 
     /**
-     * @param array<mixed>|string|null $middleware
+     * @param array<mixed>|string|MiddlewareInterface|null $middleware
      * @return $this
      */
-    public function group(?string $group, array|string|null $middleware = null): self
+    public function group(?string $group, array|string|MiddlewareInterface|null $middleware = null): self
     {
         $this->group = $this->normalizePath($group ?? '');
         $this->groupMiddleware = $this->middlewareList($middleware);
@@ -256,10 +256,10 @@ abstract class Dispatch
     }
 
     /**
-     * @param array<mixed>|string|null $middleware
+     * @param array<mixed>|string|MiddlewareInterface|null $middleware
      * @return $this
      */
-    protected function add(string $method, string $path, callable|string $handler, ?string $name, array|string|null $middleware): self
+    protected function add(string $method, string $path, callable|string $handler, ?string $name, array|string|MiddlewareInterface|null $middleware): self
     {
         $routePath = $this->joinPath($this->group, $path);
         preg_match_all('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', $routePath, $found);
@@ -289,7 +289,7 @@ abstract class Dispatch
             $routePath,
             $handler,
             $name,
-            array_values(array_unique([...$this->groupMiddleware, ...$this->middlewareList($middleware)])),
+            $this->middlewareList([...$this->groupMiddleware, ...$this->middlewareList($middleware)]),
             $this->namespace,
             $this->group,
             '~^' . ($routePath === '/' ? '/' : rtrim($quoted, '/')) . '/?$~uD',
@@ -356,7 +356,12 @@ abstract class Dispatch
     private function runPipeline(Route $route, array $data): bool
     {
         $pipeline = new Pipeline();
-        foreach ($route->middleware as $class) {
+        foreach ($route->middleware as $middleware) {
+            if ($middleware instanceof MiddlewareInterface) {
+                $pipeline->pipe($middleware);
+                continue;
+            }
+            $class = $middleware;
             // Resolve only when reached, preserving legacy short-circuit behavior.
             $pipeline->pipe(new RegisteredMiddleware(function (callable $next) use ($class): mixed {
                 if (!class_exists($class) || !method_exists($class, 'handle')) {
@@ -383,21 +388,25 @@ abstract class Dispatch
     }
 
     /**
-     * @param array<mixed>|string|null $middleware
-     * @return list<string>
+     * @param array<mixed>|string|MiddlewareInterface|null $middleware
+     * @return list<string|MiddlewareInterface>
      */
-    private function middlewareList(array|string|null $middleware): array
+    private function middlewareList(array|string|MiddlewareInterface|null $middleware): array
     {
         if ($middleware === null || $middleware === '') {
             return [];
         }
         $items = is_array($middleware) ? $middleware : [$middleware];
+        $result = [];
         foreach ($items as $item) {
-            if (!is_string($item) || trim($item) === '') {
-                throw new InvalidArgumentException('Middleware must be a class-string or a list of class-strings.');
+            if (!$item instanceof MiddlewareInterface && (!is_string($item) || trim($item) === '')) {
+                throw new InvalidArgumentException('Middleware must be a class-string, a MiddlewareInterface instance or a list of these values.');
+            }
+            if (!in_array($item, $result, true)) {
+                $result[] = $item;
             }
         }
-        return array_values($items);
+        return $result;
     }
 
     private function requestMethod(): string
