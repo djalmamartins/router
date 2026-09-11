@@ -141,7 +141,16 @@ final class ExampleMiddleware implements MiddlewareInterface
 }
 ```
 
-Registre classes explicitamente, na mesma sintaxe de rotas e grupos já existente. As classes precisam poder ser instanciadas sem argumentos. Não são aceitos objetos ou callables como registro de middleware do Router.
+Registre nomes de classe ou instâncias de `MiddlewareInterface`, individualmente ou em arrays mistos, em rotas e grupos. Classes registradas por nome precisam poder ser instanciadas sem argumentos. Instâncias permitem configurar dependências e argumentos no código da aplicação:
+
+```php
+$router->get('/admin/users', 'UserController:index', 'users.index', [
+    AuthMiddleware::class,
+    new PermissionMiddleware('users.manage'),
+]);
+```
+
+`PermissionMiddleware` é uma implementação da aplicação de `MiddlewareInterface`. Objetos legados sem essa interface e callables avulsos não são aceitos como instâncias de middleware. `null` continua representando ausência de middleware.
 
 ```php
 $router->group('studio', AuthMiddleware::class);
@@ -151,7 +160,7 @@ $router->get('/admin', 'Dashboard:admin', middleware: [
 ]);
 ```
 
-A ordem é grupo antes de rota, preservando a primeira ocorrência de cada classe. Se A pertence ao grupo e B à rota, a execução é `A BEFORE → B BEFORE → Handler → B AFTER → A AFTER`. Classes repetidas no grupo e na rota continuam sendo executadas uma única vez.
+A ordem é grupo antes de rota, preservando a primeira ocorrência de cada classe. Se A pertence ao grupo e B à rota, a execução é `A BEFORE → B BEFORE → Handler → B AFTER → A AFTER`. Classes repetidas no grupo e na rota continuam sendo executadas uma única vez. Objetos são comparados por identidade: a mesma instância repetida executa uma vez; instâncias distintas da mesma classe executam separadamente. Um nome de classe e uma instância dessa classe também são registros distintos.
 
 Um middleware pode retornar sem chamar `$next()` para interromper a cadeia. Nenhum middleware posterior é instanciado, e o handler não é executado. Cada continuação só pode ser usada uma vez durante `handle()`; a proteção pertence ao pacote `movescode/middleware`, sem duplicação no Router.
 
@@ -159,7 +168,7 @@ Um middleware pode retornar sem chamar `$next()` para interromper a cadeia. Nenh
 
 O formato `handle(Router $router): bool` continua aceito. Somente `true` avança; qualquer outro retorno interrompe. Uma classe que implementa `MiddlewareInterface` usa o contrato novo; as demais seguem a chamada legada. Ambos podem ser combinados na mesma lista. A migração é opcional nesta versão: implemente a interface, troque o argumento Router por `callable $next` e substitua o retorno de autorização `true` por `return $next()`.
 
-O Router resolve e instancia cada classe somente quando sua etapa é alcançada. Isso preserva os efeitos de construtores e a interrupção legada. A classe interna `Internal\RegisteredMiddleware` adapta essa resolução ao contrato; não é API pública suportada. Controllers continuam recebendo Router no construtor, e callables continuam recebendo parâmetros e Router conforme a assinatura existente.
+O Router resolve e instancia cada classe registrada por nome somente quando sua etapa é alcançada. Instâncias fornecidas são usadas diretamente, sem clonagem, e reutilizadas nos próximos dispatches; seu estado e suas dependências pertencem à aplicação. Isso preserva os efeitos de construtores e a interrupção legada. A classe interna `Internal\RegisteredMiddleware` adapta essa resolução ao contrato; não é API pública suportada. Controllers continuam recebendo Router no construtor, e callables continuam recebendo parâmetros e Router conforme a assinatura existente.
 
 ### Retornos e falhas
 
