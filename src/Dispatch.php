@@ -23,18 +23,18 @@ final readonly class Route
      * @param list<string> $parameters
      */
     public function __construct(
-        public string $method,
-        public string $route,
-        public mixed $handler,
+        public string  $method,
+        public string  $route,
+        public mixed   $handler,
         public ?string $name,
-        public array $middleware,
+        public array   $middleware,
         public ?string $namespace,
-        public string $group,
-        public string $pattern,
-        public array $parameters,
+        public string  $group,
+        public string  $pattern,
+        public array   $parameters,
         public ?string $host,
         public ?string $hostPattern,
-        public array $hostParameters,
+        public array   $hostParameters,
     ) {
     }
 }
@@ -62,6 +62,7 @@ abstract class Dispatch
     /** @var \stdClass|null */
     private ?object $current = null;
     private ?int $error = null;
+    private ?Throwable $exception = null;
 
     public function __construct(string $projectUrl, ?string $separator = ':')
     {
@@ -70,15 +71,15 @@ abstract class Dispatch
             throw new InvalidArgumentException('The project URL must be an absolute HTTP(S) URL.');
         }
 
-        $scheme = strtolower((string) $parts['scheme']);
+        $scheme = strtolower((string)$parts['scheme']);
         if (!in_array($scheme, ['http', 'https'], true)) {
             throw new InvalidArgumentException('The project URL must use HTTP or HTTPS.');
         }
 
-        $this->basePath = $this->normalizePath((string) ($parts['path'] ?? ''));
+        $this->basePath = $this->normalizePath((string)($parts['path'] ?? ''));
         $this->scheme = $scheme;
-        $this->baseHost = strtolower((string) $parts['host']);
-        $this->port = isset($parts['port']) ? (int) $parts['port'] : null;
+        $this->baseHost = strtolower((string)$parts['host']);
+        $this->port = isset($parts['port']) ? (int)$parts['port'] : null;
         $this->projectUrl = rtrim($projectUrl, '/');
         $this->separator = $separator ?: ':';
     }
@@ -140,7 +141,7 @@ abstract class Dispatch
             }
             $value = $data[$parameter];
             if (!is_scalar($value) && $value !== null && !$value instanceof \Stringable) return null;
-            $path = str_replace('{' . $parameter . '}', rawurlencode((string) $value), $path);
+            $path = str_replace('{' . $parameter . '}', rawurlencode((string)$value), $path);
             unset($data[$parameter]);
         }
         $host = $route->host ?? $this->baseHost;
@@ -148,7 +149,7 @@ abstract class Dispatch
             if (!array_key_exists($parameter, $data)) continue;
             $value = $data[$parameter];
             if (!is_scalar($value) && $value !== null && !$value instanceof \Stringable) return null;
-            $value = strtolower((string) $value);
+            $value = strtolower((string)$value);
             if (preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/', $value) !== 1) return null;
             $host = str_replace('{' . $parameter . '}', $value, $host);
             unset($data[$parameter]);
@@ -196,9 +197,15 @@ abstract class Dispatch
         return $this->error;
     }
 
+    public function exception(): ?Throwable
+    {
+        return $this->exception;
+    }
+
     public function dispatch(): bool
     {
         $this->error = null;
+        $this->exception = null;
         $this->current = null;
         $this->data = null;
 
@@ -224,13 +231,13 @@ abstract class Dispatch
 
                 $data = [];
                 foreach ($route->hostParameters as $parameter) {
-                    $data[$parameter] = rawurldecode((string) ($hostMatches[$parameter] ?? ''));
+                    $data[$parameter] = rawurldecode((string)($hostMatches[$parameter] ?? ''));
                 }
                 foreach ($route->parameters as $parameter) {
-                    $data[$parameter] = rawurldecode((string) ($matches[$parameter] ?? ''));
+                    $data[$parameter] = rawurldecode((string)($matches[$parameter] ?? ''));
                 }
                 $this->data = $data;
-                $this->current = (object) [
+                $this->current = (object)[
                     'method' => $route->method,
                     'route' => $route->route,
                     'controller' => $route->handler,
@@ -244,8 +251,10 @@ abstract class Dispatch
 
                 try {
                     return $this->runPipeline($route, $data);
-                } catch (Throwable) {
+                } catch (Throwable $exception) {
+                    $this->exception = $exception;
                     $this->error = 500;
+
                     return false;
                 }
             }
@@ -342,7 +351,7 @@ abstract class Dispatch
     private function invoke(callable $callable, array $data): mixed
     {
         $reflection = is_array($callable)
-            ? new ReflectionMethod($callable[0], (string) $callable[1])
+            ? new ReflectionMethod($callable[0], (string)$callable[1])
             : new ReflectionFunction(Closure::fromCallable($callable));
         $count = $reflection->getNumberOfParameters();
         $arguments = $count === 0 ? [] : [$data];

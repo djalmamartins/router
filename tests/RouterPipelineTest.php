@@ -88,11 +88,34 @@ final class RouterPipelineTest extends TestCase
 
     public function testUncaughtHandlerExceptionKeepsError500(): void
     {
+        $exception = new \Error('private error');
+
         $router = new Router('https://example.test');
-        $router->get('/', static fn () => throw new \Error('private error'), middleware: FirstMiddleware::class);
-        self::assertFalse($router->dispatch());
-        self::assertSame(500, $router->error());
-        self::assertSame(['A BEFORE'], Trace::$events);
+
+        $router->get(
+            '/',
+            static fn () => throw $exception,
+            middleware: FirstMiddleware::class
+        );
+
+        self::assertFalse(
+            $router->dispatch()
+        );
+
+        self::assertSame(
+            500,
+            $router->error()
+        );
+
+        self::assertSame(
+            $exception,
+            $router->exception()
+        );
+
+        self::assertSame(
+            ['A BEFORE'],
+            Trace::$events
+        );
     }
 
     public function testGroupAndRouteMiddlewarePreserveParametersAndNamedRoutes(): void
@@ -174,20 +197,73 @@ final class RouterPipelineTest extends TestCase
     public function testRepeatedDispatchAfterExceptionAndIndependentRouters(): void
     {
         $fail = true;
+        $exception = new \RuntimeException('first dispatch failed');
+
         $first = new Router('https://example.test');
-        $first->get('/', static function () use (&$fail): string {
-            if ($fail) { $fail = false; throw new \RuntimeException(); }
-            return 'first';
-        }, middleware: FirstMiddleware::class);
+
+        $first->get(
+            '/',
+            static function () use (&$fail, $exception): string {
+                if ($fail) {
+                    $fail = false;
+
+                    throw $exception;
+                }
+
+                return 'first';
+            },
+            middleware: FirstMiddleware::class
+        );
+
         $second = new Router('https://example.test');
-        $second->get('/', static fn () => 'second');
-        self::assertFalse($first->dispatch());
-        self::assertSame(500, $first->error());
-        self::assertTrue($second->dispatch());
-        self::assertNull($second->error());
-        self::assertTrue($first->dispatch());
-        self::assertNull($first->error());
-        self::assertSame('first', Trace::$observed);
+
+        $second->get(
+            '/',
+            static fn () => 'second'
+        );
+
+        self::assertFalse(
+            $first->dispatch()
+        );
+
+        self::assertSame(
+            500,
+            $first->error()
+        );
+
+        self::assertSame(
+            $exception,
+            $first->exception()
+        );
+
+        self::assertTrue(
+            $second->dispatch()
+        );
+
+        self::assertNull(
+            $second->error()
+        );
+
+        self::assertNull(
+            $second->exception()
+        );
+
+        self::assertTrue(
+            $first->dispatch()
+        );
+
+        self::assertNull(
+            $first->error()
+        );
+
+        self::assertNull(
+            $first->exception()
+        );
+
+        self::assertSame(
+            'first',
+            Trace::$observed
+        );
     }
 
     public function testHttpParametersCannotSelectMiddlewareClasses(): void
